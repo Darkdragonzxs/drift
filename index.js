@@ -7,10 +7,14 @@ import { createBareServer } from "@nebula-services/bare-server-node";
 const app = express();
 const bareServer = createBareServer("/fq/");
 
-// Enable CORS only for /fq
+// Parse JSON bodies
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Enable CORS for /fq
 app.use("/fq", cors({ origin: true }));
 
-// Wisp HTTP Reverse Proxy
+// Wisp reverse proxy
 app.all("/wisp/*", async (req, res) => {
   const targetPath = req.url.replace(/^\/wisp\//, "");
   const targetUrl = `https://wisp.mercurywork.shop/${targetPath}`;
@@ -19,26 +23,26 @@ app.all("/wisp/*", async (req, res) => {
     const wispRes = await fetch(targetUrl, {
       method: req.method,
       headers: req.headers,
-      body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
+      body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
     });
+
+    const contentType = wispRes.headers.get("content-type") || "application/octet-stream";
     const data = await wispRes.arrayBuffer();
 
-    res.setHeader(
-      "Content-Type",
-      wispRes.headers.get("content-type") || "application/octet-stream"
-    );
-    res.status(wispRes.status).send(Buffer.from(data));
+    res.status(wispRes.status);
+    res.setHeader("Content-Type", contentType);
+    res.send(Buffer.from(data));
   } catch (err) {
-    console.error(err);
+    console.error("Wisp proxy error:", err);
     res.status(500).send("Error proxying Wisp request");
   }
 });
 
-// Serve static files from "mango"
-app.use(express.static(path.join(process.cwd(), "mango")));
-
-// Bare server mounting
+// Mount Bare server
 app.use("/fq", bareServer);
+
+// Serve static files from mango
+app.use(express.static(path.join(process.cwd(), "mango")));
 
 // 404 fallback
 app.use((req, res) => {
